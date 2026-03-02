@@ -45,22 +45,31 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  // Process the event
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object as any
+  // Process the event - Handle both payment_intent.succeeded and checkout.session.completed
+  if (event.type === 'checkout.session.completed' || event.type === 'payment_intent.succeeded') {
+    let sessionData
+    let email, name, tier, amount, paymentIntentId, sessionId
+
+    if (event.type === 'checkout.session.completed') {
+      sessionData = event.data.object as any
+      email = sessionData.customer_email || sessionData.metadata?.customer_email || 'unknown@example.com'
+      name = sessionData.metadata?.customer_name || 'Customer'
+      tier = sessionData.metadata?.tier || 'lite'
+      amount = sessionData.amount_total ? (sessionData.amount_total / 100) : 0
+      paymentIntentId = sessionData.payment_intent || ''
+      sessionId = sessionData.id
+    } else {
+      // payment_intent.succeeded
+      sessionData = event.data.object as any
+      email = sessionData.charges?.data?.[0]?.billing_details?.email || sessionData.metadata?.customer_email || 'unknown@example.com'
+      name = sessionData.metadata?.customer_name || 'Customer'
+      tier = sessionData.metadata?.tier || 'lite'
+      amount = sessionData.amount ? (sessionData.amount / 100) : 0
+      paymentIntentId = sessionData.id
+      sessionId = sessionData.metadata?.session_id || `pi-${sessionData.id}`
+    }
     
-    console.log('[WEBHOOK] Processing checkout.session.completed')
-    console.log('[WEBHOOK] Session ID:', session.id)
-    console.log('[WEBHOOK] Customer email:', session.customer_email)
-    console.log('[WEBHOOK] Metadata:', session.metadata)
-
-    const email = session.customer_email || session.metadata?.customer_email || 'unknown@example.com'
-    const name = session.metadata?.customer_name || 'Customer'
-    const tier = session.metadata?.tier || 'lite'
-    const amount = session.amount_total ? (session.amount_total / 100) : 0
-    const paymentIntentId = session.payment_intent || ''
-
-    console.log('[WEBHOOK] Extracted data:', { email, name, tier, amount, paymentIntentId })
+    console.log('[WEBHOOK] Processing payment for:', { email, name, tier, amount })
 
     try {
       console.log(`[WEBHOOK] Attempting to insert into Supabase...`)
@@ -73,7 +82,7 @@ export async function POST(req: Request) {
           product_tier: tier,
           amount: amount,
           status: 'pending',
-          stripe_session_id: session.id,
+          stripe_session_id: sessionId,
           stripe_payment_intent_id: paymentIntentId,
         })
         .select()
@@ -85,12 +94,11 @@ export async function POST(req: Request) {
           details: error.details,
           hint: error.hint,
         })
-        // Log pero no fallar - Stripe necesita 200
       } else {
         console.log('[WEBHOOK] ✅ Order inserted successfully:', {
           id: data?.[0]?.id,
           email: email,
-          session_id: session.id,
+          session_id: sessionId,
         })
       }
     } catch (err: any) {
@@ -98,7 +106,6 @@ export async function POST(req: Request) {
         message: err.message,
         stack: err.stack,
       })
-      // Log pero no fallar - Stripe necesita 200
     }
   } else {
     console.log(`[WEBHOOK] Ignoring event type: ${event.type}`)
