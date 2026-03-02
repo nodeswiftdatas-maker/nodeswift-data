@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 
 const PRICING = {
@@ -71,27 +71,10 @@ export default function PricingPage() {
   const [company, setCompany] = useState('')
   const [earningsDate, setEarningsDate] = useState('')
   const [loading, setLoading] = useState(false)
-  const [tickerSuggestions, setTickerSuggestions] = useState<string[]>([])
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const tickerRef = useRef<HTMLDivElement>(null)
 
-  const handleTickerInput = (value: string) => {
-    const upper = value.toUpperCase()
-    setTicker(upper)
-    if (upper.length >= 1) {
-      const matches = Object.keys(TICKERS).filter(t => t.startsWith(upper) || TICKERS[t].toUpperCase().includes(upper))
-      setTickerSuggestions(matches.slice(0, 6))
-      setShowSuggestions(true)
-    } else {
-      setTickerSuggestions([])
-      setShowSuggestions(false)
-    }
-  }
-
-  const selectTicker = (t: string) => {
-    setTicker(t)
-    setCompany(TICKERS[t])
-    setShowSuggestions(false)
+  const handleTickerChange = (value: string) => {
+    setTicker(value)
+    setCompany(TICKERS[value] || '')
   }
 
   const handleCheckout = async (tier: keyof typeof PRICING) => {
@@ -105,7 +88,7 @@ export default function PricingPage() {
       const response = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier, email, customerName: name, ticker: ticker.toUpperCase(), company, earningsDate }),
+        body: JSON.stringify({ tier, email, customerName: name, ticker, company, earningsDate }),
       })
 
       const data = await response.json()
@@ -146,7 +129,7 @@ export default function PricingPage() {
 
           {/* Pricing Cards */}
           <div className="grid md:grid-cols-3 gap-8 mb-16">
-            {(Object.entries(PRICING) as [keyof typeof PRICING, any][]).map(([key, tier]) => (
+            {(Object.entries(PRICING) as [keyof typeof PRICING, typeof PRICING[keyof typeof PRICING]][]).map(([key, tier]) => (
               <div
                 key={key}
                 className={`p-8 rounded-lg border transition cursor-pointer ${
@@ -165,7 +148,7 @@ export default function PricingPage() {
                 </div>
 
                 <button
-                  onClick={() => setSelectedTier(key)}
+                  onClick={(e) => { e.stopPropagation(); setSelectedTier(key) }}
                   className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg mb-6 transition"
                 >
                   Select
@@ -174,58 +157,25 @@ export default function PricingPage() {
                 <ul className="space-y-3">
                   {key === 'lite' && (
                     <>
-                      <li className="flex items-start text-gray-300">
-                        <span className="text-cyan-400 mr-3">✓</span>
-                        CSV dataset download
-                      </li>
-                      <li className="flex items-start text-gray-300">
-                        <span className="text-cyan-400 mr-3">✓</span>
-                        EPS & Revenue surprise %
-                      </li>
-                      <li className="flex items-start text-gray-300">
-                        <span className="text-cyan-400 mr-3">✓</span>
-                        Guidance analysis
-                      </li>
+                      <li className="flex items-start text-gray-300"><span className="text-cyan-400 mr-3">✓</span>CSV dataset download</li>
+                      <li className="flex items-start text-gray-300"><span className="text-cyan-400 mr-3">✓</span>EPS & Revenue surprise %</li>
+                      <li className="flex items-start text-gray-300"><span className="text-cyan-400 mr-3">✓</span>Guidance analysis</li>
                     </>
                   )}
                   {key === 'premium' && (
                     <>
-                      <li className="flex items-start text-gray-300">
-                        <span className="text-cyan-400 mr-3">✓</span>
-                        Full JSON dataset
-                      </li>
-                      <li className="flex items-start text-gray-300">
-                        <span className="text-cyan-400 mr-3">✓</span>
-                        Detailed analysis report
-                      </li>
-                      <li className="flex items-start text-gray-300">
-                        <span className="text-cyan-400 mr-3">✓</span>
-                        Sentiment analysis
-                      </li>
-                      <li className="flex items-start text-gray-300">
-                        <span className="text-cyan-400 mr-3">✓</span>
-                        Insider tracking
-                      </li>
+                      <li className="flex items-start text-gray-300"><span className="text-cyan-400 mr-3">✓</span>Full JSON dataset</li>
+                      <li className="flex items-start text-gray-300"><span className="text-cyan-400 mr-3">✓</span>Detailed analysis report</li>
+                      <li className="flex items-start text-gray-300"><span className="text-cyan-400 mr-3">✓</span>Sentiment analysis</li>
+                      <li className="flex items-start text-gray-300"><span className="text-cyan-400 mr-3">✓</span>Insider tracking</li>
                     </>
                   )}
                   {key === 'pro' && (
                     <>
-                      <li className="flex items-start text-gray-300">
-                        <span className="text-cyan-400 mr-3">✓</span>
-                        Everything in Premium
-                      </li>
-                      <li className="flex items-start text-gray-300">
-                        <span className="text-cyan-400 mr-3">✓</span>
-                        30-min Zoom consultation
-                      </li>
-                      <li className="flex items-start text-gray-300">
-                        <span className="text-cyan-400 mr-3">✓</span>
-                        Custom analysis
-                      </li>
-                      <li className="flex items-start text-gray-300">
-                        <span className="text-cyan-400 mr-3">✓</span>
-                        Priority support
-                      </li>
+                      <li className="flex items-start text-gray-300"><span className="text-cyan-400 mr-3">✓</span>Everything in Premium</li>
+                      <li className="flex items-start text-gray-300"><span className="text-cyan-400 mr-3">✓</span>30-min Zoom consultation</li>
+                      <li className="flex items-start text-gray-300"><span className="text-cyan-400 mr-3">✓</span>Custom analysis</li>
+                      <li className="flex items-start text-gray-300"><span className="text-cyan-400 mr-3">✓</span>Priority support</li>
                     </>
                   )}
                 </ul>
@@ -262,53 +212,47 @@ export default function PricingPage() {
 
               <div className="border-t border-slate-600 pt-4">
                 <p className="text-cyan-400 text-xs font-semibold uppercase tracking-wider mb-3">Company to Analyze</p>
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div className="relative" ref={tickerRef}>
-                    <label className="block text-gray-300 mb-2 text-sm">Ticker Symbol</label>
-                    <input
-                      type="text"
-                      value={ticker}
-                      onChange={(e) => handleTickerInput(e.target.value)}
-                      onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                      placeholder="NVDA"
-                      maxLength={10}
-                      autoComplete="off"
-                      className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-gray-500 focus:border-cyan-500 focus:outline-none uppercase"
-                    />
-                    {showSuggestions && tickerSuggestions.length > 0 && (
-                      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl overflow-hidden">
-                        {tickerSuggestions.map((t) => (
-                          <button
-                            key={t}
-                            type="button"
-                            onMouseDown={() => selectTicker(t)}
-                            className="w-full text-left px-3 py-2 hover:bg-slate-700 flex justify-between items-center"
-                          >
-                            <span className="text-cyan-400 font-bold text-sm">{t}</span>
-                            <span className="text-gray-400 text-xs truncate ml-2">{TICKERS[t]}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-gray-300 mb-2 text-sm">Earnings Date</label>
-                    <input
-                      type="date"
-                      value={earningsDate}
-                      onChange={(e) => setEarningsDate(e.target.value)}
-                      className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:border-cyan-500 focus:outline-none"
-                    />
-                  </div>
+
+                <div className="mb-3">
+                  <label className="block text-gray-300 mb-2 text-sm">Select Company</label>
+                  <select
+                    value={ticker}
+                    onChange={(e) => handleTickerChange(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 16px',
+                      backgroundColor: '#334155',
+                      border: '1px solid #475569',
+                      borderRadius: '6px',
+                      color: ticker ? 'white' : '#6b7280',
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                      appearance: 'auto',
+                    }}
+                  >
+                    <option value="" disabled>— Select a company —</option>
+                    {Object.entries(TICKERS).map(([t, companyName]) => (
+                      <option key={t} value={t} style={{ backgroundColor: '#1e293b', color: 'white' }}>
+                        {t} — {companyName}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
+                {company && (
+                  <div className="mb-3 px-3 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded text-sm">
+                    <span className="text-cyan-400 font-bold">{ticker}</span>
+                    <span className="text-gray-300 ml-2">{company}</span>
+                  </div>
+                )}
+
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm">Company Name</label>
+                  <label className="block text-gray-300 mb-2 text-sm">Earnings Date</label>
                   <input
-                    type="text"
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                    placeholder="NVIDIA Corporation"
-                    className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-gray-500 focus:border-cyan-500 focus:outline-none"
+                    type="date"
+                    value={earningsDate}
+                    onChange={(e) => setEarningsDate(e.target.value)}
+                    className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:border-cyan-500 focus:outline-none"
                   />
                 </div>
               </div>
