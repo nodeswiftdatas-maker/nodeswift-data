@@ -3,6 +3,17 @@ import { supabase } from '@/lib/supabase'
 import { headers } from 'next/headers'
 
 export async function POST(req: Request) {
+  // Validar configuración crítica
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    console.error('CRITICAL: NEXT_PUBLIC_SUPABASE_URL not configured')
+    return Response.json({ error: 'Supabase URL not configured' }, { status: 500 })
+  }
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    console.error('CRITICAL: Supabase credentials not configured')
+    return Response.json({ error: 'Supabase credentials not configured' }, { status: 500 })
+  }
+
   const body = await req.text()
   const headersList = await headers()
   const sig = headersList.get('stripe-signature') || ''
@@ -27,7 +38,9 @@ export async function POST(req: Request) {
     const amount = (session.amount_total || 0) / 100
 
     try {
-      const { error } = await supabase.from('orders').insert({
+      console.log('Processing order:', { email, name, tier, amount, session_id: session.id })
+      
+      const { data, error } = await supabase.from('orders').insert({
         customer_email: email,
         customer_name: name,
         product_tier: tier,
@@ -35,14 +48,14 @@ export async function POST(req: Request) {
         status: 'pending',
         stripe_session_id: session.id,
         stripe_payment_intent_id: session.payment_intent || '',
-      })
+      }).select()
 
       if (error) {
         console.error('Supabase insert error:', error)
         return Response.json({ error: error.message }, { status: 500 })
       }
 
-      console.log('Order saved:', session.id)
+      console.log('Order saved successfully:', { session_id: session.id, data })
     } catch (err: any) {
       console.error('Webhook error:', err)
       return Response.json({ error: err.message }, { status: 500 })
