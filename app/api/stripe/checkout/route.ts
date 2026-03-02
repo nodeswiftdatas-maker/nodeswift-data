@@ -39,6 +39,9 @@ export async function POST(req: Request) {
       metadata: {
         tier,
         customer_name: customerName,
+        ticker: 'NVDA',
+        company: 'NVIDIA Corporation',
+        earnings_date: new Date().toISOString(),
       },
     })
 
