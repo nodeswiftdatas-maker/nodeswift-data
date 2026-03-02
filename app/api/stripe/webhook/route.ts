@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       const paymentIntent = event.data.object as any
 
       const metadata = paymentIntent.metadata || {}
-      const email = paymentIntent.receipt_email
+      const email = paymentIntent.receipt_email || metadata.customer_email || 'unknown@example.com'
       const customerName = metadata.customer_name || 'Customer'
       const tier = metadata.tier || 'lite'
 
