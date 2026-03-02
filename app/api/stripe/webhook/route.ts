@@ -1,12 +1,13 @@
 import { stripe } from '@/utils/stripe'
-import { createClient } from '@supabase/supabase-js'
+import { analyzeEarningsWithKimi } from '@/utils/kimi'
+import { sendOrderConfirmationEmail, sendAnalysisCompleteEmail } from '@/utils/email'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { headers } from 'next/headers'
 
 export async function POST(req: Request) {
   console.log('[WEBHOOK] ========== WEBHOOK RECEIVED ==========')
-  
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  // Preferir service role key, pero caer a anon key si no existe
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   console.log('[WEBHOOK] Config check:')
@@ -18,8 +19,6 @@ export async function POST(req: Request) {
 
   if (!supabaseUrl || !supabaseKey) {
     console.error('[WEBHOOK] CRITICAL: Missing Supabase configuration')
-    console.error('[WEBHOOK] URL:', supabaseUrl || 'MISSING')
-    console.error('[WEBHOOK] KEY:', supabaseKey || 'MISSING')
     return Response.json({ error: 'Missing Supabase credentials' }, { status: 500 })
   }
 
@@ -39,41 +38,45 @@ export async function POST(req: Request) {
       sig,
       process.env.STRIPE_WEBHOOK_SECRET || ''
     )
-    console.log(`[WEBHOOK] ✅ Event validated: ${event.type}`)
+    console.log('[WEBHOOK] ✅ Event validated:', event.type)
   } catch (err: any) {
     console.error('[WEBHOOK] ❌ Signature verification failed:', err.message)
     return Response.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  // Process the event - Handle both payment_intent.succeeded and checkout.session.completed
   if (event.type === 'checkout.session.completed' || event.type === 'payment_intent.succeeded') {
-    let sessionData
-    let email, name, tier, amount, paymentIntentId, sessionId
+    let sessionData: any
+    let email: string, name: string, tier: string, amount: number
+    let paymentIntentId: string, sessionId: string
+    let ticker: string, company: string, earningsDate: string
 
     if (event.type === 'checkout.session.completed') {
-      sessionData = event.data.object as any
+      sessionData = event.data.object
       email = sessionData.customer_email || sessionData.metadata?.customer_email || 'unknown@example.com'
       name = sessionData.metadata?.customer_name || 'Customer'
       tier = sessionData.metadata?.tier || 'lite'
-      amount = sessionData.amount_total ? (sessionData.amount_total / 100) : 0
+      amount = sessionData.amount_total ? sessionData.amount_total / 100 : 0
       paymentIntentId = sessionData.payment_intent || ''
       sessionId = sessionData.id
+      ticker = sessionData.metadata?.ticker || ''
+      company = sessionData.metadata?.company || ''
+      earningsDate = sessionData.metadata?.earnings_date || ''
     } else {
-      // payment_intent.succeeded
-      sessionData = event.data.object as any
+      sessionData = event.data.object
       email = sessionData.charges?.data?.[0]?.billing_details?.email || sessionData.metadata?.customer_email || 'unknown@example.com'
       name = sessionData.metadata?.customer_name || 'Customer'
       tier = sessionData.metadata?.tier || 'lite'
-      amount = sessionData.amount ? (sessionData.amount / 100) : 0
+      amount = sessionData.amount ? sessionData.amount / 100 : 0
       paymentIntentId = sessionData.id
-      sessionId = sessionData.metadata?.session_id || `pi-${sessionData.id}`
+      sessionId = sessionData.metadata?.session_id || 'pi-' + sessionData.id
+      ticker = sessionData.metadata?.ticker || ''
+      company = sessionData.metadata?.company || ''
+      earningsDate = sessionData.metadata?.earnings_date || ''
     }
-    
-    console.log('[WEBHOOK] Processing payment for:', { email, name, tier, amount })
+
+    console.log('[WEBHOOK] Processing payment for:', { email, name, tier, amount, ticker, company })
 
     try {
-      console.log(`[WEBHOOK] Attempting to insert into Supabase...`)
-      
       const { data, error } = await supabase
         .from('orders')
         .insert({
@@ -84,6 +87,9 @@ export async function POST(req: Request) {
           status: 'pending',
           stripe_session_id: sessionId,
           stripe_payment_intent_id: paymentIntentId,
+          ticker: ticker || null,
+          company: company || null,
+          earnings_date: earningsDate || null,
         })
         .select()
 
@@ -95,23 +101,77 @@ export async function POST(req: Request) {
           hint: error.hint,
         })
       } else {
-        console.log('[WEBHOOK] ✅ Order inserted successfully:', {
-          id: data?.[0]?.id,
-          email: email,
-          session_id: sessionId,
-        })
+        const orderId = data?.[0]?.id
+        console.log('[WEBHOOK] ✅ Order inserted:', { id: orderId, email, ticker })
+
+        // Send confirmation email (fire and forget)
+        sendOrderConfirmationEmail(email, { order_id: orderId, tier, amount })
+          .catch(err => console.error('[EMAIL] Confirmation failed:', err))
+
+        // Trigger Kimi analysis (fire and forget — returns 200 to Stripe immediately)
+        if (ticker && company) {
+          runKimiAnalysis(orderId, email, { ticker, company, earningsDate, tier, supabase })
+            .catch(err => console.error('[KIMI] Analysis failed:', err))
+        } else {
+          console.warn('[WEBHOOK] No ticker/company — skipping Kimi analysis')
+        }
       }
     } catch (err: any) {
-      console.error('[WEBHOOK] ❌ Exception during insert:', {
-        message: err.message,
-        stack: err.stack,
-      })
+      console.error('[WEBHOOK] ❌ Exception during insert:', err.message)
     }
   } else {
-    console.log(`[WEBHOOK] Ignoring event type: ${event.type}`)
+    console.log('[WEBHOOK] Ignoring event type:', event.type)
   }
 
-  // ALWAYS return 200 to Stripe
   console.log('[WEBHOOK] ========== WEBHOOK COMPLETE (200) ==========')
   return Response.json({ received: true }, { status: 200 })
+}
+
+async function runKimiAnalysis(
+  orderId: string,
+  email: string,
+  params: {
+    ticker: string
+    company: string
+    earningsDate: string
+    tier: string
+    supabase: SupabaseClient
+  }
+) {
+  const { ticker, company, earningsDate, tier, supabase } = params
+
+  console.log('[KIMI] Starting analysis for', ticker, '(order', orderId + ')')
+
+  try {
+    await supabase.from('orders').update({ status: 'processing' }).eq('id', orderId)
+
+    console.log('[KIMI] Calling Moonshot API for', ticker + '...')
+
+    const result = await analyzeEarningsWithKimi({
+      ticker,
+      company,
+      earningsDate,
+      analysisType: tier as 'lite' | 'premium' | 'pro',
+    })
+
+    console.log('[KIMI] ✅ Analysis complete for', ticker, '— signal:', result.signal_strength)
+
+    await supabase
+      .from('orders')
+      .update({ status: 'completed', analysis_data: result })
+      .eq('id', orderId)
+
+    await sendAnalysisCompleteEmail(email, {
+      ticker: result.ticker,
+      company: result.company,
+      eps_beat: result.eps_beat,
+      sentiment: result.management_tone,
+      confidence: result.signal_strength,
+    })
+
+    console.log('[KIMI] ✅ Email sent to', email, 'for', ticker)
+  } catch (err: any) {
+    console.error('[KIMI] ❌ Analysis failed for', ticker + ':', err.message)
+    await supabase.from('orders').update({ status: 'failed' }).eq('id', orderId)
+  }
 }

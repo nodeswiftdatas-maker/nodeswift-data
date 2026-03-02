@@ -13,11 +13,14 @@ export default function PricingPage() {
   const [selectedTier, setSelectedTier] = useState<keyof typeof PRICING>('premium')
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
+  const [ticker, setTicker] = useState('')
+  const [company, setCompany] = useState('')
+  const [earningsDate, setEarningsDate] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleCheckout = async (tier: keyof typeof PRICING) => {
-    if (!email || !name) {
-      alert('Please fill in your name and email')
+    if (!email || !name || !ticker || !company || !earningsDate) {
+      alert('Please fill in all fields including the company details')
       return
     }
 
@@ -26,7 +29,7 @@ export default function PricingPage() {
       const response = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier, email, customerName: name }),
+        body: JSON.stringify({ tier, email, customerName: name, ticker: ticker.toUpperCase(), company, earningsDate }),
       })
 
       const data = await response.json()
@@ -181,6 +184,42 @@ export default function PricingPage() {
                 />
               </div>
 
+              <div className="border-t border-slate-600 pt-4">
+                <p className="text-cyan-400 text-xs font-semibold uppercase tracking-wider mb-3">Company to Analyze</p>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-gray-300 mb-2 text-sm">Ticker Symbol</label>
+                    <input
+                      type="text"
+                      value={ticker}
+                      onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                      placeholder="NVDA"
+                      maxLength={10}
+                      className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-gray-500 focus:border-cyan-500 focus:outline-none uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-300 mb-2 text-sm">Earnings Date</label>
+                    <input
+                      type="date"
+                      value={earningsDate}
+                      onChange={(e) => setEarningsDate(e.target.value)}
+                      className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:border-cyan-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm">Company Name</label>
+                  <input
+                    type="text"
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                    placeholder="NVIDIA Corporation"
+                    className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-gray-500 focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
               <div className="bg-slate-700/50 p-4 rounded">
                 <p className="text-gray-300 text-sm">
                   <strong>Selected:</strong> {PRICING[selectedTier].name}
@@ -193,7 +232,7 @@ export default function PricingPage() {
 
             <button
               onClick={() => handleCheckout(selectedTier)}
-              disabled={loading || !email || !name}
+              disabled={loading || !email || !name || !ticker || !company || !earningsDate}
               className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Processing...' : `Pay $${PRICING[selectedTier].price}`}

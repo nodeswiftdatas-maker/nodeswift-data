@@ -3,9 +3,9 @@ import { stripe } from '@/utils/stripe'
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { tier, email, customerName } = body
+    const { tier, email, customerName, ticker, company, earningsDate } = body
 
-    if (!tier || !email || !customerName) {
+    if (!tier || !email || !customerName || !ticker || !company || !earningsDate) {
       return Response.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
             currency: 'usd',
             product_data: {
               name: price.name,
-              description: 'Earnings analysis dataset',
+              description: `Earnings analysis: ${ticker} - ${company}`,
             },
             unit_amount: Math.round(price.price * 100),
           },
@@ -39,9 +39,9 @@ export async function POST(req: Request) {
       metadata: {
         tier,
         customer_name: customerName,
-        ticker: 'NVDA',
-        company: 'NVIDIA Corporation',
-        earnings_date: new Date().toISOString(),
+        ticker,
+        company,
+        earnings_date: earningsDate,
       },
     })
 
