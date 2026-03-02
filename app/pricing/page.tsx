@@ -1,12 +1,66 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import Link from 'next/link'
 
 const PRICING = {
   lite: { name: 'Data Lite', price: 29, description: 'Quick earnings summary' },
   premium: { name: 'Data Premium', price: 99, description: 'Complete analysis' },
   pro: { name: 'Data Pro', price: 199, description: 'Expert consultation' },
+}
+
+const TICKERS: Record<string, string> = {
+  AAPL: 'Apple Inc.',
+  MSFT: 'Microsoft Corporation',
+  NVDA: 'NVIDIA Corporation',
+  GOOGL: 'Alphabet Inc.',
+  AMZN: 'Amazon.com Inc.',
+  META: 'Meta Platforms Inc.',
+  TSLA: 'Tesla Inc.',
+  BRK: 'Berkshire Hathaway Inc.',
+  TSM: 'Taiwan Semiconductor Manufacturing',
+  AVGO: 'Broadcom Inc.',
+  JPM: 'JPMorgan Chase & Co.',
+  LLY: 'Eli Lilly and Company',
+  V: 'Visa Inc.',
+  XOM: 'Exxon Mobil Corporation',
+  MA: 'Mastercard Incorporated',
+  UNH: 'UnitedHealth Group Inc.',
+  JNJ: 'Johnson & Johnson',
+  COST: 'Costco Wholesale Corporation',
+  HD: 'The Home Depot Inc.',
+  PG: 'Procter & Gamble Co.',
+  BAC: 'Bank of America Corporation',
+  NFLX: 'Netflix Inc.',
+  AMD: 'Advanced Micro Devices Inc.',
+  CRM: 'Salesforce Inc.',
+  ORCL: 'Oracle Corporation',
+  INTC: 'Intel Corporation',
+  QCOM: 'Qualcomm Incorporated',
+  IBM: 'International Business Machines',
+  UBER: 'Uber Technologies Inc.',
+  ABNB: 'Airbnb Inc.',
+  SHOP: 'Shopify Inc.',
+  SQ: 'Block Inc.',
+  PYPL: 'PayPal Holdings Inc.',
+  COIN: 'Coinbase Global Inc.',
+  PLTR: 'Palantir Technologies Inc.',
+  ARM: 'Arm Holdings plc',
+  SMCI: 'Super Micro Computer Inc.',
+  MU: 'Micron Technology Inc.',
+  GS: 'Goldman Sachs Group Inc.',
+  MS: 'Morgan Stanley',
+  WMT: 'Walmart Inc.',
+  DIS: 'The Walt Disney Company',
+  BABA: 'Alibaba Group Holding',
+  NKE: 'Nike Inc.',
+  SBUX: 'Starbucks Corporation',
+  BA: 'The Boeing Company',
+  GE: 'GE Aerospace',
+  F: 'Ford Motor Company',
+  GM: 'General Motors Company',
+  T: 'AT&T Inc.',
+  VZ: 'Verizon Communications Inc.',
 }
 
 export default function PricingPage() {
@@ -17,6 +71,28 @@ export default function PricingPage() {
   const [company, setCompany] = useState('')
   const [earningsDate, setEarningsDate] = useState('')
   const [loading, setLoading] = useState(false)
+  const [tickerSuggestions, setTickerSuggestions] = useState<string[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const tickerRef = useRef<HTMLDivElement>(null)
+
+  const handleTickerInput = (value: string) => {
+    const upper = value.toUpperCase()
+    setTicker(upper)
+    if (upper.length >= 1) {
+      const matches = Object.keys(TICKERS).filter(t => t.startsWith(upper) || TICKERS[t].toUpperCase().includes(upper))
+      setTickerSuggestions(matches.slice(0, 6))
+      setShowSuggestions(true)
+    } else {
+      setTickerSuggestions([])
+      setShowSuggestions(false)
+    }
+  }
+
+  const selectTicker = (t: string) => {
+    setTicker(t)
+    setCompany(TICKERS[t])
+    setShowSuggestions(false)
+  }
 
   const handleCheckout = async (tier: keyof typeof PRICING) => {
     if (!email || !name || !ticker || !company || !earningsDate) {
@@ -187,16 +263,33 @@ export default function PricingPage() {
               <div className="border-t border-slate-600 pt-4">
                 <p className="text-cyan-400 text-xs font-semibold uppercase tracking-wider mb-3">Company to Analyze</p>
                 <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
+                  <div className="relative" ref={tickerRef}>
                     <label className="block text-gray-300 mb-2 text-sm">Ticker Symbol</label>
                     <input
                       type="text"
                       value={ticker}
-                      onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                      onChange={(e) => handleTickerInput(e.target.value)}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                       placeholder="NVDA"
                       maxLength={10}
+                      autoComplete="off"
                       className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-gray-500 focus:border-cyan-500 focus:outline-none uppercase"
                     />
+                    {showSuggestions && tickerSuggestions.length > 0 && (
+                      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl overflow-hidden">
+                        {tickerSuggestions.map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onMouseDown={() => selectTicker(t)}
+                            className="w-full text-left px-3 py-2 hover:bg-slate-700 flex justify-between items-center"
+                          >
+                            <span className="text-cyan-400 font-bold text-sm">{t}</span>
+                            <span className="text-gray-400 text-xs truncate ml-2">{TICKERS[t]}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-gray-300 mb-2 text-sm">Earnings Date</label>
