@@ -5,18 +5,22 @@ import { headers } from 'next/headers'
 export async function POST(req: Request) {
   console.log('[WEBHOOK] ========== WEBHOOK RECEIVED ==========')
   
-  // Inicializar cliente Supabase dentro de la función
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  // Preferir service role key, pero caer a anon key si no existe
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   console.log('[WEBHOOK] Config check:')
   console.log('[WEBHOOK] - URL presente:', !!supabaseUrl)
-  console.log('[WEBHOOK] - KEY presente:', !!supabaseKey)
+  console.log('[WEBHOOK] - SERVICE_ROLE_KEY presente:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
+  console.log('[WEBHOOK] - ANON_KEY presente:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  console.log('[WEBHOOK] - KEY being used:', supabaseKey ? '✅ YES' : '❌ NO')
   console.log('[WEBHOOK] - WEBHOOK_SECRET presente:', !!process.env.STRIPE_WEBHOOK_SECRET)
 
   if (!supabaseUrl || !supabaseKey) {
-    console.error('[WEBHOOK] CRITICAL: Missing Supabase credentials')
-    return Response.json({ error: 'Missing credentials' }, { status: 500 })
+    console.error('[WEBHOOK] CRITICAL: Missing Supabase configuration')
+    console.error('[WEBHOOK] URL:', supabaseUrl || 'MISSING')
+    console.error('[WEBHOOK] KEY:', supabaseKey || 'MISSING')
+    return Response.json({ error: 'Missing Supabase credentials' }, { status: 500 })
   }
 
   const supabase = createClient(supabaseUrl, supabaseKey)
@@ -41,7 +45,7 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  // Procesar el evento
+  // Process the event
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as any
     
@@ -59,7 +63,6 @@ export async function POST(req: Request) {
     console.log('[WEBHOOK] Extracted data:', { email, name, tier, amount, paymentIntentId })
 
     try {
-      // Insertar datos
       console.log(`[WEBHOOK] Attempting to insert into Supabase...`)
       
       const { data, error } = await supabase
@@ -82,25 +85,26 @@ export async function POST(req: Request) {
           details: error.details,
           hint: error.hint,
         })
-        throw new Error(`Supabase error: ${error.message}`)
+        // Log pero no fallar - Stripe necesita 200
+      } else {
+        console.log('[WEBHOOK] ✅ Order inserted successfully:', {
+          id: data?.[0]?.id,
+          email: email,
+          session_id: session.id,
+        })
       }
-
-      console.log('[WEBHOOK] ✅ Order inserted successfully:', {
-        id: data?.[0]?.id,
-        email: email,
-        session_id: session.id,
-      })
     } catch (err: any) {
-      console.error('[WEBHOOK] ❌ Fatal error:', {
+      console.error('[WEBHOOK] ❌ Exception during insert:', {
         message: err.message,
         stack: err.stack,
       })
+      // Log pero no fallar - Stripe necesita 200
     }
   } else {
     console.log(`[WEBHOOK] Ignoring event type: ${event.type}`)
   }
 
-  // SIEMPRE devolver 200
+  // ALWAYS return 200 to Stripe
   console.log('[WEBHOOK] ========== WEBHOOK COMPLETE (200) ==========')
   return Response.json({ received: true }, { status: 200 })
 }
