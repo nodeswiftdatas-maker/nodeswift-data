@@ -52,7 +52,7 @@ export async function POST(req: Request) {
 
     if (event.type === 'checkout.session.completed') {
       sessionData = event.data.object
-      email = sessionData.customer_email || sessionData.metadata?.customer_email || 'unknown@example.com'
+      email = sessionData.customer_details?.email || sessionData.customer_email || sessionData.metadata?.customer_email || 'unknown@example.com'
       name = sessionData.metadata?.customer_name || 'Customer'
       tier = sessionData.metadata?.tier || 'lite'
       amount = sessionData.amount_total ? sessionData.amount_total / 100 : 0
