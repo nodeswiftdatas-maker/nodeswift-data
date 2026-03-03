@@ -1,3 +1,5 @@
+export const maxDuration = 60
+
 import { stripe } from '@/utils/stripe'
 import Stripe from 'stripe'
 import { analyzeEarningsWithKimi } from '@/utils/kimi'

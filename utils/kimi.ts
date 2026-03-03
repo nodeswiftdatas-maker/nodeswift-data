@@ -1,8 +1,3 @@
-interface KimiMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
-
 interface KimiAnalysisRequest {
   ticker: string
   company: string
@@ -20,6 +15,10 @@ export async function analyzeEarningsWithKimi(request: KimiAnalysisRequest) {
 
   const prompt = buildAnalysisPrompt(request)
 
+  // 40-second timeout to stay within Vercel function limits
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 40000)
+
   try {
     const response = await fetch('https://api.moonshot.cn/v1/chat/completions', {
       method: 'POST',
@@ -29,88 +28,82 @@ export async function analyzeEarningsWithKimi(request: KimiAnalysisRequest) {
       },
       body: JSON.stringify({
         model,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 2000,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        max_tokens: 800,
       }),
+      signal: controller.signal,
     })
 
+    clearTimeout(timeout)
+
     if (!response.ok) {
-      const error = await response.json()
-      console.error('Kimi API error:', error)
-      throw new Error(`Kimi API error: ${error.message}`)
+      const errorBody = await response.json().catch(() => ({}))
+      const errorMsg = errorBody?.error?.message || errorBody?.message || `HTTP ${response.status}`
+      console.error('[KIMI] API error:', response.status, errorMsg)
+      throw new Error(`Kimi API error ${response.status}: ${errorMsg}`)
     }
 
     const data = await response.json()
-    const analysisText = data.choices[0].message.content
+    const analysisText: string = data?.choices?.[0]?.message?.content || ''
 
+    if (!analysisText) {
+      throw new Error('Empty response from Kimi API')
+    }
+
+    console.log('[KIMI] Raw response length:', analysisText.length)
     return parseAnalysisResponse(analysisText, request)
-  } catch (error) {
-    console.error('Error calling Kimi API:', error)
-    throw error
+
+  } catch (error: unknown) {
+    clearTimeout(timeout)
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error('[KIMI] Request failed:', msg)
+    throw new Error(msg)
   }
 }
 
 function buildAnalysisPrompt(request: KimiAnalysisRequest): string {
-  return `
-Analyze the earnings for ${request.company} (${request.ticker}) on ${request.earningsDate}.
+  return `You are a financial analyst. For ${request.company} (${request.ticker}) earnings on ${request.earningsDate}, provide a ${request.analysisType} analysis.
 
-Generate a ${request.analysisType} level analysis with:
-1. EPS Surprise (% beat or miss vs consensus)
-2. Revenue Surprise (% beat or miss vs consensus)
-3. Guidance Assessment (raised, lowered, inline)
-4. Management Tone (bullish, neutral, bearish)
-5. Key Catalysts
-6. Insider Activity Summary
-7. Investment Thesis
-8. Signal Strength (0-100)
-
-Format the response as JSON with these exact fields:
+Respond ONLY with this JSON, no other text:
 {
-  "ticker": "${request.ticker}",
-  "company": "${request.company}",
-  "eps_beat": <number>,
-  "revenue_beat": <number>,
-  "guidance": "<string>",
-  "management_tone": "<string>",
-  "key_catalysts": ["<string>"],
-  "insider_activity": "<string>",
-  "thesis": "<string>",
-  "signal_strength": <number>
-}
-`
+  "eps_beat": <number between -20 and 20>,
+  "revenue_beat": <number between -10 and 10>,
+  "guidance": "raised" | "lowered" | "inline",
+  "management_tone": "bullish" | "neutral" | "bearish",
+  "key_catalysts": ["<string>", "<string>"],
+  "insider_activity": "<one sentence>",
+  "thesis": "<two sentences max>",
+  "signal_strength": <number 0-100>
+}`
 }
 
 function parseAnalysisResponse(response: string, request: KimiAnalysisRequest) {
+  // Try to extract JSON block from response
+  const jsonMatch = response.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) {
+    console.error('[KIMI] No JSON in response. Raw:', response.slice(0, 200))
+    throw new Error('No JSON found in Kimi response')
+  }
+
+  let analysis: Record<string, unknown>
   try {
-    // Extract JSON from response (in case there's extra text)
-    const jsonMatch = response.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      throw new Error('No JSON found in response')
-    }
+    analysis = JSON.parse(jsonMatch[0])
+  } catch {
+    console.error('[KIMI] JSON parse failed. Raw:', jsonMatch[0].slice(0, 200))
+    throw new Error('Failed to parse Kimi JSON response')
+  }
 
-    const analysis = JSON.parse(jsonMatch[0])
-
-    return {
-      ticker: request.ticker,
-      company: request.company,
-      eps_beat: analysis.eps_beat || 0,
-      revenue_beat: analysis.revenue_beat || 0,
-      guidance: analysis.guidance || 'N/A',
-      management_tone: analysis.management_tone || 'neutral',
-      key_catalysts: analysis.key_catalysts || [],
-      insider_activity: analysis.insider_activity || 'N/A',
-      thesis: analysis.thesis || '',
-      signal_strength: analysis.signal_strength || 0,
-      analysis_data: analysis,
-    }
-  } catch (error) {
-    console.error('Error parsing Kimi response:', error)
-    throw error
+  return {
+    ticker: request.ticker,
+    company: request.company,
+    eps_beat: Number(analysis.eps_beat) || 0,
+    revenue_beat: Number(analysis.revenue_beat) || 0,
+    guidance: String(analysis.guidance || 'inline'),
+    management_tone: String(analysis.management_tone || 'neutral'),
+    key_catalysts: Array.isArray(analysis.key_catalysts) ? analysis.key_catalysts as string[] : [],
+    insider_activity: String(analysis.insider_activity || 'N/A'),
+    thesis: String(analysis.thesis || ''),
+    signal_strength: Number(analysis.signal_strength) || 50,
   }
 }
