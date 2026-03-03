@@ -7,7 +7,7 @@ interface KimiAnalysisRequest {
 
 export async function analyzeEarningsWithKimi(request: KimiAnalysisRequest) {
   const apiKey = process.env.KIMI_API_KEY
-  const model = process.env.KIMI_MODEL || 'moonshot-v1-8k'
+  const model = 'moonshot-v1-8k'
 
   if (!apiKey) {
     throw new Error('KIMI_API_KEY not configured')
