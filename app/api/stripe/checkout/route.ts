@@ -1,5 +1,11 @@
 import { stripe } from '@/utils/stripe'
 
+const PRICING: Record<string, { name: string; price: number }> = {
+  lite: { name: 'Data Lite', price: 29 },
+  premium: { name: 'Data Premium', price: 99 },
+  pro: { name: 'Data Pro', price: 199 },
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json()
@@ -9,13 +15,21 @@ export async function POST(req: Request) {
       return Response.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const PRICING: any = {
-      lite: { name: 'Data Lite', price: 29 },
-      premium: { name: 'Data Premium', price: 99 },
-      pro: { name: 'Data Pro', price: 199 },
+    const price = PRICING[tier]
+    if (!price) {
+      return Response.json({ error: 'Invalid tier' }, { status: 400 })
     }
 
-    const price = PRICING[tier]
+    // Metadata attached to BOTH the session AND the payment_intent
+    // so we can extract it from either checkout.session.completed OR payment_intent.succeeded
+    const sharedMetadata = {
+      tier,
+      customer_name: customerName,
+      customer_email: email,
+      ticker,
+      company,
+      earnings_date: earningsDate,
+    }
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -36,19 +50,16 @@ export async function POST(req: Request) {
       success_url: `${process.env.NEXT_PUBLIC_APP_URL}/success`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/pricing`,
       customer_email: email,
-      metadata: {
-        tier,
-        customer_name: customerName,
-        customer_email: email,
-        ticker,
-        company,
-        earnings_date: earningsDate,
+      metadata: sharedMetadata,
+      payment_intent_data: {
+        metadata: sharedMetadata,
       },
     })
 
     return Response.json({ sessionId: session.id, url: session.url })
-  } catch (error: any) {
-    console.error('Checkout error:', error)
-    return Response.json({ error: error.message || 'Failed to create checkout' }, { status: 500 })
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Failed to create checkout'
+    console.error('Checkout error:', msg)
+    return Response.json({ error: msg }, { status: 500 })
   }
 }
