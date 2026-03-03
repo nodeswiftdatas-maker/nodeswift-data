@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
@@ -175,6 +175,30 @@ export default function DashboardPage() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
+  const [retrying, setRetrying] = useState<Record<string, boolean>>({})
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const fetchOrders = async (emailAddr: string) => {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('customer_email', emailAddr)
+      .order('created_at', { ascending: false })
+    if (!error) setOrders(data || [])
+  }
+
+  // Auto-refresh every 15s while any order is pending/processing
+  useEffect(() => {
+    const hasActiveOrders = orders.some(o => o.status === 'pending' || o.status === 'processing')
+    if (hasActiveOrders && email) {
+      pollRef.current = setInterval(() => fetchOrders(email), 15000)
+    } else {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [orders, email])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -182,18 +206,31 @@ export default function DashboardPage() {
     setLoading(true)
     setSearched(true)
     try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('customer_email', email)
-        .order('created_at', { ascending: false })
-      if (error) throw error
-      setOrders(data || [])
+      await fetchOrders(email)
     } catch (err) {
       console.error('Error fetching orders:', err)
       setOrders([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleRetry = async (orderId: string) => {
+    setRetrying(prev => ({ ...prev, [orderId]: true }))
+    try {
+      const res = await fetch('/api/retry-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+      })
+      if (res.ok) {
+        // Optimistically update status to processing
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'processing' } : o))
+      }
+    } catch (err) {
+      console.error('Retry failed:', err)
+    } finally {
+      setRetrying(prev => ({ ...prev, [orderId]: false }))
     }
   }
 
@@ -283,7 +320,7 @@ export default function DashboardPage() {
                 {/* Pending/Processing message */}
                 {(order.status === 'pending' || order.status === 'processing') && (
                   <p className="text-gray-400 text-sm">
-                    Your analysis is being prepared. You&apos;ll receive an email when it&apos;s ready (30–40 min).
+                    Your analysis is being prepared. This page refreshes automatically every 15 seconds.
                   </p>
                 )}
 
@@ -292,12 +329,17 @@ export default function DashboardPage() {
                   <AnalysisCard data={order.analysis_data} tier={order.product_tier} />
                 )}
 
+                {/* Failed — retry button */}
                 {order.status === 'failed' && (
-                  <div className="mt-3">
-                    <p className="text-red-400 text-sm mb-3">Analysis failed. Please contact support.</p>
-                    <Link href="/pricing" className="text-cyan-400 hover:text-cyan-300 text-sm transition">
-                      Place a new order →
-                    </Link>
+                  <div className="mt-3 flex items-center gap-4">
+                    <p className="text-red-400 text-sm">Analysis failed.</p>
+                    <button
+                      onClick={() => handleRetry(order.id)}
+                      disabled={retrying[order.id]}
+                      className="bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 text-white text-sm font-bold py-1.5 px-4 rounded-lg transition"
+                    >
+                      {retrying[order.id] ? 'Retrying...' : 'Retry Analysis'}
+                    </button>
                   </div>
                 )}
               </div>
