@@ -15,12 +15,11 @@ export async function analyzeEarningsWithKimi(request: KimiAnalysisRequest) {
 
   const prompt = buildAnalysisPrompt(request)
 
-  // 40-second timeout to stay within Vercel function limits
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 40000)
 
   try {
-    const response = await fetch('https://api.moonshot.cn/v1/chat/completions', {
+    const response = await fetch('https://api.moonshot.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -39,7 +38,7 @@ export async function analyzeEarningsWithKimi(request: KimiAnalysisRequest) {
 
     if (!response.ok) {
       const errorBody = await response.json().catch(() => ({}))
-      const errorMsg = errorBody?.error?.message || errorBody?.message || `HTTP ${response.status}`
+      const errorMsg = errorBody?.error?.message || `HTTP ${response.status}`
       console.error('[KIMI] API error:', response.status, errorMsg)
       throw new Error(`Kimi API error ${response.status}: ${errorMsg}`)
     }
@@ -65,21 +64,20 @@ export async function analyzeEarningsWithKimi(request: KimiAnalysisRequest) {
 function buildAnalysisPrompt(request: KimiAnalysisRequest): string {
   return `You are a financial analyst. For ${request.company} (${request.ticker}) earnings on ${request.earningsDate}, provide a ${request.analysisType} analysis.
 
-Respond ONLY with this JSON, no other text:
+Respond ONLY with valid JSON, no other text:
 {
   "eps_beat": <number between -20 and 20>,
   "revenue_beat": <number between -10 and 10>,
-  "guidance": "raised" | "lowered" | "inline",
-  "management_tone": "bullish" | "neutral" | "bearish",
-  "key_catalysts": ["<string>", "<string>"],
-  "insider_activity": "<one sentence>",
-  "thesis": "<two sentences max>",
+  "guidance": "raised" or "lowered" or "inline",
+  "management_tone": "bullish" or "neutral" or "bearish",
+  "key_catalysts": ["<string>", "<string>", "<string>"],
+  "insider_activity": "<one sentence about insider buying/selling>",
+  "thesis": "<two sentences max investment thesis>",
   "signal_strength": <number 0-100>
 }`
 }
 
 function parseAnalysisResponse(response: string, request: KimiAnalysisRequest) {
-  // Try to extract JSON block from response
   const jsonMatch = response.match(/\{[\s\S]*\}/)
   if (!jsonMatch) {
     console.error('[KIMI] No JSON in response. Raw:', response.slice(0, 200))
