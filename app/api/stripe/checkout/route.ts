@@ -39,6 +39,7 @@ export async function POST(req: Request) {
       metadata: {
         tier,
         customer_name: customerName,
+        customer_email: email,
         ticker,
         company,
         earnings_date: earningsDate,

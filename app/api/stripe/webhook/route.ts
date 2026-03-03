@@ -1,4 +1,5 @@
 import { stripe } from '@/utils/stripe'
+import Stripe from 'stripe'
 import { analyzeEarningsWithKimi } from '@/utils/kimi'
 import { sendOrderConfirmationEmail, sendAnalysisCompleteEmail } from '@/utils/email'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
@@ -44,35 +45,17 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  if (event.type === 'checkout.session.completed' || event.type === 'payment_intent.succeeded') {
-    let sessionData: any
-    let email: string, name: string, tier: string, amount: number
-    let paymentIntentId: string, sessionId: string
-    let ticker: string, company: string, earningsDate: string
-
-    if (event.type === 'checkout.session.completed') {
-      sessionData = event.data.object
-      email = sessionData.customer_details?.email || sessionData.customer_email || sessionData.metadata?.customer_email || 'unknown@example.com'
-      name = sessionData.metadata?.customer_name || 'Customer'
-      tier = sessionData.metadata?.tier || 'lite'
-      amount = sessionData.amount_total ? sessionData.amount_total / 100 : 0
-      paymentIntentId = sessionData.payment_intent || ''
-      sessionId = sessionData.id
-      ticker = sessionData.metadata?.ticker || ''
-      company = sessionData.metadata?.company || ''
-      earningsDate = sessionData.metadata?.earnings_date || ''
-    } else {
-      sessionData = event.data.object
-      email = sessionData.charges?.data?.[0]?.billing_details?.email || sessionData.metadata?.customer_email || 'unknown@example.com'
-      name = sessionData.metadata?.customer_name || 'Customer'
-      tier = sessionData.metadata?.tier || 'lite'
-      amount = sessionData.amount ? sessionData.amount / 100 : 0
-      paymentIntentId = sessionData.id
-      sessionId = sessionData.metadata?.session_id || 'pi-' + sessionData.id
-      ticker = sessionData.metadata?.ticker || ''
-      company = sessionData.metadata?.company || ''
-      earningsDate = sessionData.metadata?.earnings_date || ''
-    }
+  if (event.type === 'checkout.session.completed') {
+    const sessionData = event.data.object as Stripe.Checkout.Session
+    const email: string = sessionData.metadata?.customer_email || sessionData.customer_details?.email || sessionData.customer_email || 'unknown@example.com'
+    const name: string = sessionData.metadata?.customer_name || 'Customer'
+    const tier: string = sessionData.metadata?.tier || 'lite'
+    const amount: number = sessionData.amount_total ? sessionData.amount_total / 100 : 0
+    const paymentIntentId: string = typeof sessionData.payment_intent === 'string' ? sessionData.payment_intent : (sessionData.payment_intent?.id ?? '')
+    const sessionId: string = sessionData.id
+    const ticker: string = sessionData.metadata?.ticker || ''
+    const company: string = sessionData.metadata?.company || ''
+    const earningsDate: string = sessionData.metadata?.earnings_date || ''
 
     console.log('[WEBHOOK] Processing payment for:', { email, name, tier, amount, ticker, company })
 
